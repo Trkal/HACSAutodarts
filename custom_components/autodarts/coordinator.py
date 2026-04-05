@@ -62,11 +62,18 @@ class AutodartsDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except AutodartsApiError as err:
             raise UpdateFailed(f"Error fetching board data: {err}") from err
 
-        # 2. Cloud: if a match is active, fetch match data
+        # 2. Cloud: if a match is active, fetch match data + live state
         match_id = board.get("matchId")
         if match_id:
             try:
-                result["match"] = await self.cloud.get_match(match_id)
+                match = await self.cloud.get_match(match_id)
+                # Merge live game state into match dict
+                try:
+                    state = await self.cloud.get_match_state(match_id)
+                    match.update(state)
+                except AutodartsApiError:
+                    _LOGGER.debug("Could not fetch match state for %s", match_id)
+                result["match"] = match
             except AutodartsApiError as err:
                 _LOGGER.warning("Could not fetch match %s: %s", match_id, err)
 

@@ -136,11 +136,14 @@ def _get_visit_score(data: dict[str, Any]) -> int | None:
 
 
 def _get_darts_thrown(data: dict[str, Any]) -> int | None:
-    """Total darts thrown in the match."""
+    """Total darts thrown in the match (across all players)."""
     match = _match(data)
     if not match:
         return None
-    return match.get("turns")
+    turns = match.get("turns")
+    if isinstance(turns, list):
+        return sum(len(t.get("throws", [])) for t in turns)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -284,16 +287,32 @@ class AutodartsPlayerSensorBase(AutodartsEntity, SensorEntity):
         coordinator: AutodartsDataUpdateCoordinator,
         player_index: int,
         key_suffix: str,
+        label: str,
     ) -> None:
         """Initialize the player sensor."""
         super().__init__(coordinator)
         self._player_index = player_index
+        self._key_suffix = key_suffix
+        self._label = label
         self._attr_unique_id = f"{coordinator.board_id}_player_{player_index}_{key_suffix}"
 
     @property
     def _match_data(self) -> dict[str, Any] | None:
         data = self.coordinator.data or {}
         return _match(data)
+
+    @property
+    def _player_name(self) -> str:
+        """Get the actual player name or fallback."""
+        player = self._player_data
+        if player:
+            return player.get("name", f"Player {self._player_index + 1}")
+        return f"Player {self._player_index + 1}"
+
+    @property
+    def name(self) -> str:
+        """Dynamic name using actual player name."""
+        return f"{self._player_name} {self._label}"
 
     @property
     def _player_data(self) -> dict[str, Any] | None:
@@ -316,6 +335,16 @@ class AutodartsPlayerSensorBase(AutodartsEntity, SensorEntity):
         return None
 
     @property
+    def _stats_data(self) -> dict[str, Any] | None:
+        match = self._match_data
+        if not match:
+            return None
+        stats = match.get("stats", [])
+        if self._player_index < len(stats):
+            return stats[self._player_index]
+        return None
+
+    @property
     def available(self) -> bool:
         """Only available when this player slot is active in a match."""
         return self._player_data is not None
@@ -329,23 +358,17 @@ class AutodartsPlayerScoreSensor(AutodartsPlayerSensorBase):
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(self, coordinator: AutodartsDataUpdateCoordinator, player_index: int) -> None:
-        super().__init__(coordinator, player_index, "score")
-        self._attr_name = f"Player {player_index + 1} Score"
+        super().__init__(coordinator, player_index, "score", "Score")
 
     @property
     def native_value(self) -> int | None:
-        score = self._score_data
-        if not score:
+        match = self._match_data
+        if not match:
             return None
-        # currentLegPoints holds remaining score in X01
-        return score.get("currentLegPoints")
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        player = self._player_data
-        if not player:
-            return None
-        return {"player_name": player.get("name")}
+        game_scores = match.get("gameScores", [])
+        if self._player_index < len(game_scores):
+            return game_scores[self._player_index]
+        return None
 
 
 class AutodartsPlayerPPDSensor(AutodartsPlayerSensorBase):
@@ -356,23 +379,30 @@ class AutodartsPlayerPPDSensor(AutodartsPlayerSensorBase):
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(self, coordinator: AutodartsDataUpdateCoordinator, player_index: int) -> None:
-        super().__init__(coordinator, player_index, "ppd")
-        self._attr_name = f"Player {player_index + 1} PPD"
+        super().__init__(coordinator, player_index, "ppd", "Average")
 
     @property
     def native_value(self) -> float | None:
-        match = self._match_data
-        if not match:
+        stats = self._stats_data
+        if not stats:
             return None
-        stats = match.get("stats", [])
-        if self._player_index >= len(stats):
-            return None
-        player_stats = stats[self._player_index]
-        if isinstance(player_stats, dict):
-            ppd = player_stats.get("ppd") or player_stats.get("average") or player_stats.get("avg")
-            if ppd is not None:
-                return round(float(ppd), 2)
+        avg = stats.get("average")
+        if avg is not None:
+            return round(float(avg), 2)
         return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        stats = self._stats_data
+        if not stats:
+            return None
+        attrs: dict[str, Any] = {}
+        leg = stats.get("legStats") or {}
+        if leg.get("average") is not None:
+            attrs["leg_average"] = round(float(leg["average"]), 2)
+        if leg.get("dartsThrown") is not None:
+            attrs["leg_darts_thrown"] = leg["dartsThrown"]
+        return attrs or None
 
 
 class AutodartsPlayerLegsSensor(AutodartsPlayerSensorBase):
@@ -381,8 +411,7 @@ class AutodartsPlayerLegsSensor(AutodartsPlayerSensorBase):
     _attr_icon = "mdi:trophy"
 
     def __init__(self, coordinator: AutodartsDataUpdateCoordinator, player_index: int) -> None:
-        super().__init__(coordinator, player_index, "legs")
-        self._attr_name = f"Player {player_index + 1} Legs Won"
+        super().__init__(coordinator, player_index, "legs", "Legs")
 
     @property
     def native_value(self) -> int | None:
@@ -398,8 +427,7 @@ class AutodartsPlayerSetsSensor(AutodartsPlayerSensorBase):
     _attr_icon = "mdi:trophy-variant"
 
     def __init__(self, coordinator: AutodartsDataUpdateCoordinator, player_index: int) -> None:
-        super().__init__(coordinator, player_index, "sets")
-        self._attr_name = f"Player {player_index + 1} Sets Won"
+        super().__init__(coordinator, player_index, "sets", "Sets")
 
     @property
     def native_value(self) -> int | None:

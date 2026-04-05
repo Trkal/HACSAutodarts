@@ -227,8 +227,12 @@ class AutodartsCloudClient:
     # -- matches -------------------------------------------------------------
 
     async def get_match(self, match_id: str) -> dict[str, Any]:
-        """Get full match data including players, scores, turns."""
+        """Get match metadata (players, variant, settings)."""
         return await self._get(f"/gs/v0/matches/{match_id}")
+
+    async def get_match_state(self, match_id: str) -> dict[str, Any]:
+        """Get live match game state (scores, turns, stats, etc.)."""
+        return await self._get(f"/gs/v0/matches/{match_id}/state")
 
     # -- users / stats -------------------------------------------------------
 
