@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import secrets
 import time
 from typing import Any
+from urllib.parse import urlencode
 
 import aiohttp
 
@@ -14,7 +17,10 @@ _LOGGER = logging.getLogger(__name__)
 DEFAULT_TIMEOUT = 10
 
 # Keycloak / OAuth2 constants
-AUTH_URL = "https://login.autodarts.io/realms/autodarts/protocol/openid-connect/token"
+CLIENT_ID = "autodarts-play"
+AUTH_URL = "https://login.autodarts.io/realms/autodarts/protocol/openid-connect/auth"
+TOKEN_URL = "https://login.autodarts.io/realms/autodarts/protocol/openid-connect/token"
+REDIRECT_URI = "https://play.autodarts.io/hacs-auth"
 API_BASE = "https://api.autodarts.io"
 
 
@@ -28,6 +34,63 @@ class AutodartsConnectionError(AutodartsApiError):
 
 class AutodartsAuthError(AutodartsApiError):
     """Exception for authentication errors."""
+
+
+# ---------------------------------------------------------------------------
+# OAuth2 helpers (Authorization Code + PKCE)
+# ---------------------------------------------------------------------------
+
+
+def generate_pkce() -> tuple[str, str]:
+    """Generate a PKCE code_verifier and code_challenge (S256)."""
+    verifier = secrets.token_urlsafe(64)
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    import base64
+
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    return verifier, challenge
+
+
+def build_authorize_url(code_challenge: str) -> str:
+    """Build the Keycloak authorization URL for the user to open."""
+    params = {
+        "client_id": CLIENT_ID,
+        "response_type": "code",
+        "redirect_uri": REDIRECT_URI,
+        "scope": "openid",
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+    }
+    return f"{AUTH_URL}?{urlencode(params)}"
+
+
+async def exchange_code(
+    session: aiohttp.ClientSession,
+    code: str,
+    code_verifier: str,
+) -> dict[str, Any]:
+    """Exchange an authorization code for tokens."""
+    data = {
+        "grant_type": "authorization_code",
+        "client_id": CLIENT_ID,
+        "code": code,
+        "redirect_uri": REDIRECT_URI,
+        "code_verifier": code_verifier,
+    }
+    try:
+        async with asyncio.timeout(DEFAULT_TIMEOUT):
+            resp = await session.post(TOKEN_URL, data=data)
+            if resp.status in (400, 401):
+                body = await resp.json()
+                raise AutodartsAuthError(
+                    body.get("error_description", "Token exchange failed")
+                )
+            resp.raise_for_status()
+            return await resp.json()
+    except asyncio.TimeoutError as err:
+        raise AutodartsConnectionError("Timeout during token exchange") from err
+    except aiohttp.ClientError as err:
+        raise AutodartsConnectionError(f"Token exchange failed: {err}") from err
 
 
 # ---------------------------------------------------------------------------
@@ -78,72 +141,59 @@ class AutodartsLocalClient:
 
 
 class AutodartsCloudClient:
-    """Async client for the Autodarts cloud API with OAuth2 auth."""
+    """Async client for the Autodarts cloud API with token-based auth."""
 
-    def __init__(self, email: str, password: str, session: aiohttp.ClientSession) -> None:
-        """Initialize the cloud API client."""
-        self._email = email
-        self._password = password
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        token: dict[str, Any],
+    ) -> None:
+        """Initialize the cloud API client with an existing token dict."""
         self._session = session
-        self._access_token: str | None = None
-        self._refresh_token: str | None = None
-        self._token_expiry: float = 0
+        self._access_token: str = token["access_token"]
+        self._refresh_token: str | None = token.get("refresh_token")
+        self._token_expiry: float = token.get("expires_at", 0)
+
+    @property
+    def token(self) -> dict[str, Any]:
+        """Return the current token dict for persistence."""
+        return {
+            "access_token": self._access_token,
+            "refresh_token": self._refresh_token,
+            "expires_at": self._token_expiry,
+        }
 
     # -- authentication -----------------------------------------------------
 
-    async def authenticate(self) -> None:
-        """Obtain an access token using email + password."""
-        data = {
-            "grant_type": "password",
-            "client_id": "autodarts-app",
-            "username": self._email,
-            "password": self._password,
-        }
-        try:
-            async with asyncio.timeout(DEFAULT_TIMEOUT):
-                resp = await self._session.post(AUTH_URL, data=data)
-                if resp.status == 401:
-                    raise AutodartsAuthError("Invalid email or password")
-                resp.raise_for_status()
-                body = await resp.json()
-        except asyncio.TimeoutError as err:
-            raise AutodartsConnectionError("Timeout during authentication") from err
-        except aiohttp.ClientError as err:
-            raise AutodartsConnectionError(f"Auth request failed: {err}") from err
-
-        self._access_token = body["access_token"]
-        self._refresh_token = body.get("refresh_token")
-        self._token_expiry = time.monotonic() + body.get("expires_in", 300) - 30
-
     async def _ensure_token(self) -> None:
         """Refresh the token if it is about to expire."""
-        if self._access_token and time.monotonic() < self._token_expiry:
+        if time.time() < self._token_expiry - 30:
             return
-        if self._refresh_token:
-            try:
-                await self._do_refresh()
-                return
-            except AutodartsApiError:
-                _LOGGER.debug("Token refresh failed, re-authenticating")
-        await self.authenticate()
+        if not self._refresh_token:
+            raise AutodartsAuthError("No refresh token available — re-authenticate")
+        await self._do_refresh()
 
     async def _do_refresh(self) -> None:
         data = {
             "grant_type": "refresh_token",
-            "client_id": "autodarts-app",
+            "client_id": CLIENT_ID,
             "refresh_token": self._refresh_token,
         }
         try:
             async with asyncio.timeout(DEFAULT_TIMEOUT):
-                resp = await self._session.post(AUTH_URL, data=data)
+                resp = await self._session.post(TOKEN_URL, data=data)
+                if resp.status in (400, 401):
+                    raise AutodartsAuthError("Refresh token expired — re-authenticate")
                 resp.raise_for_status()
                 body = await resp.json()
-        except (asyncio.TimeoutError, aiohttp.ClientError) as err:
+        except asyncio.TimeoutError as err:
+            raise AutodartsConnectionError("Timeout refreshing token") from err
+        except aiohttp.ClientError as err:
             raise AutodartsConnectionError(f"Token refresh failed: {err}") from err
 
         self._access_token = body["access_token"]
         self._refresh_token = body.get("refresh_token", self._refresh_token)
-        self._token_expiry = time.monotonic() + body.get("expires_in", 300) - 30
+        self._token_expiry = time.time() + body.get("expires_in", 300)
 
     async def _headers(self) -> dict[str, str]:
         await self._ensure_token()
@@ -163,15 +213,6 @@ class AutodartsCloudClient:
             raise AutodartsConnectionError(f"Timeout fetching {path}") from err
         except aiohttp.ClientError as err:
             raise AutodartsConnectionError(f"Error fetching {path}: {err}") from err
-
-    async def test_connection(self) -> bool:
-        """Test authentication and cloud connectivity."""
-        try:
-            await self.authenticate()
-            await self.get_boards()
-        except AutodartsApiError:
-            return False
-        return True
 
     # -- boards --------------------------------------------------------------
 

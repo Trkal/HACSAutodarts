@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import AutodartsCloudClient, AutodartsLocalClient
-from .const import CONF_BOARD_ID, CONF_EMAIL, CONF_HOST, CONF_PASSWORD, CONF_PORT, PLATFORMS
+from .const import CONF_BOARD_ID, CONF_HOST, CONF_PORT, CONF_TOKEN, PLATFORMS
 from .coordinator import AutodartsDataUpdateCoordinator
 
 type AutodartsConfigEntry = ConfigEntry[AutodartsDataUpdateCoordinator]
@@ -21,11 +21,9 @@ async def async_setup_entry(
     session = async_get_clientsession(hass)
 
     cloud = AutodartsCloudClient(
-        email=entry.data[CONF_EMAIL],
-        password=entry.data[CONF_PASSWORD],
         session=session,
+        token=entry.data[CONF_TOKEN],
     )
-    await cloud.authenticate()
 
     local = None
     if entry.data.get(CONF_HOST):
@@ -40,6 +38,7 @@ async def async_setup_entry(
         cloud=cloud,
         board_id=entry.data[CONF_BOARD_ID],
         local=local,
+        entry=entry,
     )
     await coordinator.async_config_entry_first_refresh()
 

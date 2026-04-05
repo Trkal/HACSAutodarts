@@ -6,6 +6,7 @@ from datetime import timedelta
 import logging
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -14,7 +15,7 @@ from .api import (
     AutodartsCloudClient,
     AutodartsLocalClient,
 )
-from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
+from .const import CONF_TOKEN, DEFAULT_SCAN_INTERVAL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class AutodartsDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         cloud: AutodartsCloudClient,
         board_id: str,
         local: AutodartsLocalClient | None = None,
+        entry: ConfigEntry | None = None,
     ) -> None:
         """Initialize the coordinator."""
         super().__init__(
@@ -39,6 +41,7 @@ class AutodartsDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.cloud = cloud
         self.board_id = board_id
         self.local = local
+        self._entry = entry
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from cloud API (and optionally local board)."""
@@ -69,5 +72,15 @@ class AutodartsDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 result["local"] = await self.local.get_state()
             except AutodartsApiError:
                 _LOGGER.debug("Local board not reachable")
+
+        # 4. Persist refreshed token so it survives restarts
+        if self._entry is not None:
+            new_token = self.cloud.token
+            stored = self._entry.data.get(CONF_TOKEN, {})
+            if new_token.get("access_token") != stored.get("access_token"):
+                self.hass.config_entries.async_update_entry(
+                    self._entry,
+                    data={**self._entry.data, CONF_TOKEN: new_token},
+                )
 
         return result

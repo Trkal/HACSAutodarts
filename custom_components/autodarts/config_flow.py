@@ -2,34 +2,35 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import AutodartsAuthError, AutodartsCloudClient, AutodartsConnectionError
-from .const import CONF_BOARD_ID, CONF_EMAIL, CONF_HOST, CONF_PASSWORD, CONF_PORT, DEFAULT_PORT, DOMAIN
-
-STEP_USER_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_EMAIL): str,
-        vol.Required(CONF_PASSWORD): str,
-        vol.Optional(CONF_HOST): str,
-        vol.Optional(CONF_PORT, default=DEFAULT_PORT): int,
-    }
+from .api import (
+    AutodartsAuthError,
+    AutodartsCloudClient,
+    AutodartsConnectionError,
+    build_authorize_url,
+    exchange_code,
+    generate_pkce,
 )
+from .const import CONF_BOARD_ID, CONF_HOST, CONF_PORT, CONF_TOKEN, DEFAULT_PORT, DOMAIN
 
 
 class AutodartsConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Autodarts."""
 
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self) -> None:
         """Initialize the config flow."""
-        self._cloud_client: AutodartsCloudClient | None = None
+        self._code_verifier: str | None = None
+        self._token: dict[str, Any] = {}
         self._boards: dict[str, str] = {}
         self._user_input: dict[str, Any] = {}
 
@@ -37,49 +38,114 @@ class AutodartsConfigFlow(ConfigFlow, domain=DOMAIN):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Step 1: Enter Autodarts email + password (and optional board host)."""
+        """Step 1: Optional local board IP, then redirect to auth step."""
+        if user_input is not None:
+            self._user_input = user_input
+            return await self.async_step_auth()
+
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_HOST): str,
+                vol.Optional(CONF_PORT, default=DEFAULT_PORT): int,
+            }
+        )
+        return self.async_show_form(step_id="user", data_schema=schema)
+
+    async def async_step_auth(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Step 2: User logs in via browser and pastes the redirect URL."""
         errors: dict[str, str] = {}
 
-        if user_input is not None:
-            session = async_get_clientsession(self.hass)
-            cloud = AutodartsCloudClient(
-                user_input[CONF_EMAIL],
-                user_input[CONF_PASSWORD],
-                session,
+        if user_input is None:
+            # Generate PKCE pair and build authorize URL
+            self._code_verifier, challenge = generate_pkce()
+            auth_url = build_authorize_url(challenge)
+            return self.async_show_form(
+                step_id="auth",
+                data_schema=vol.Schema({vol.Required("redirect_url"): str}),
+                description_placeholders={"authorize_url": auth_url},
             )
-            try:
-                await cloud.authenticate()
-                boards = await cloud.get_boards()
-            except AutodartsAuthError:
-                errors["base"] = "invalid_auth"
-            except AutodartsConnectionError:
-                errors["base"] = "cannot_connect"
-            else:
-                self._cloud_client = cloud
-                self._user_input = user_input
-                self._boards = {
-                    b["id"]: f"{b.get('name', b['id'])}" for b in boards
-                }
-                if not self._boards:
-                    errors["base"] = "no_boards"
-                elif len(self._boards) == 1:
-                    # Only one board — skip selection step
-                    board_id = next(iter(self._boards))
-                    return self._create_entry(board_id)
-                else:
-                    return await self.async_step_board()
 
-        return self.async_show_form(
-            step_id="user",
-            data_schema=STEP_USER_DATA_SCHEMA,
-            errors=errors,
-        )
+        # User pasted the redirect URL — extract the code
+        redirect_url = user_input["redirect_url"].strip()
+        parsed = urlparse(redirect_url)
+        qs = parse_qs(parsed.query)
+        code = qs.get("code", [None])[0]
+
+        if not code:
+            errors["redirect_url"] = "no_code"
+            # Regenerate auth URL
+            self._code_verifier, challenge = generate_pkce()
+            auth_url = build_authorize_url(challenge)
+            return self.async_show_form(
+                step_id="auth",
+                data_schema=vol.Schema({vol.Required("redirect_url"): str}),
+                description_placeholders={"authorize_url": auth_url},
+                errors=errors,
+            )
+
+        # Exchange the code for tokens
+        session = async_get_clientsession(self.hass)
+        try:
+            token_data = await exchange_code(session, code, self._code_verifier)  # type: ignore[arg-type]
+        except AutodartsAuthError:
+            errors["redirect_url"] = "invalid_code"
+            self._code_verifier, challenge = generate_pkce()
+            auth_url = build_authorize_url(challenge)
+            return self.async_show_form(
+                step_id="auth",
+                data_schema=vol.Schema({vol.Required("redirect_url"): str}),
+                description_placeholders={"authorize_url": auth_url},
+                errors=errors,
+            )
+        except AutodartsConnectionError:
+            errors["base"] = "cannot_connect"
+            self._code_verifier, challenge = generate_pkce()
+            auth_url = build_authorize_url(challenge)
+            return self.async_show_form(
+                step_id="auth",
+                data_schema=vol.Schema({vol.Required("redirect_url"): str}),
+                description_placeholders={"authorize_url": auth_url},
+                errors=errors,
+            )
+
+        # Normalise token for storage
+        self._token = {
+            "access_token": token_data["access_token"],
+            "refresh_token": token_data.get("refresh_token"),
+            "expires_at": time.time() + token_data.get("expires_in", 300),
+        }
+
+        # Fetch boards
+        cloud = AutodartsCloudClient(session, self._token)
+        try:
+            boards = await cloud.get_boards()
+        except AutodartsConnectionError:
+            errors["base"] = "cannot_connect"
+            self._code_verifier, challenge = generate_pkce()
+            auth_url = build_authorize_url(challenge)
+            return self.async_show_form(
+                step_id="auth",
+                data_schema=vol.Schema({vol.Required("redirect_url"): str}),
+                description_placeholders={"authorize_url": auth_url},
+                errors=errors,
+            )
+
+        self._boards = {b["id"]: b.get("name", b["id"]) for b in boards}
+
+        if not self._boards:
+            return self.async_abort(reason="no_boards")
+        if len(self._boards) == 1:
+            return self._create_entry(next(iter(self._boards)))
+        return await self.async_step_board()
 
     async def async_step_board(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Step 2: Select which board to use."""
+        """Step 3: Select which board to use."""
         if user_input is not None:
             return self._create_entry(user_input[CONF_BOARD_ID])
 
@@ -96,12 +162,10 @@ class AutodartsConfigFlow(ConfigFlow, domain=DOMAIN):
         self._async_abort_entries_match({CONF_BOARD_ID: board_id})
 
         board_name = self._boards.get(board_id, board_id)
-        data = {
-            CONF_EMAIL: self._user_input[CONF_EMAIL],
-            CONF_PASSWORD: self._user_input[CONF_PASSWORD],
+        data: dict[str, Any] = {
+            CONF_TOKEN: self._token,
             CONF_BOARD_ID: board_id,
         }
-        # Optional local board connection
         if self._user_input.get(CONF_HOST):
             data[CONF_HOST] = self._user_input[CONF_HOST]
             data[CONF_PORT] = self._user_input.get(CONF_PORT, DEFAULT_PORT)

@@ -4,12 +4,17 @@
     "step": {
       "user": {
         "title": "Set up Autodarts",
-        "description": "Enter your Autodarts account credentials. Optionally provide the local board IP for faster throw detection.",
+        "description": "Optionally provide your local board IP for faster throw detection, then click Submit to link your Autodarts account.",
         "data": {
-          "email": "Email",
-          "password": "Password",
           "host": "Local board IP (optional)",
           "port": "Local board port"
+        }
+      },
+      "auth": {
+        "title": "Link Autodarts Account",
+        "description": "1. [Click here to log in to Autodarts]({authorize_url})\n2. After logging in, your browser will redirect — copy the **full URL** from the address bar\n3. Paste it below",
+        "data": {
+          "redirect_url": "Redirect URL"
         }
       },
       "board": {
@@ -21,12 +26,13 @@
       }
     },
     "error": {
-      "invalid_auth": "Invalid email or password.",
-      "cannot_connect": "Unable to connect to the Autodarts cloud service.",
-      "no_boards": "No boards found for this account."
+      "no_code": "Could not find authorization code in the URL. Make sure you copied the full URL from the browser.",
+      "invalid_code": "Authorization code is invalid or expired. Please try again.",
+      "cannot_connect": "Unable to connect to the Autodarts cloud service."
     },
     "abort": {
-      "already_configured": "This Autodarts board is already configured."
+      "already_configured": "This Autodarts board is already configured.",
+      "no_boards": "No boards found for this account."
     }
   },
   "entity": {

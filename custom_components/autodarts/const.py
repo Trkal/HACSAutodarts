@@ -8,8 +8,7 @@ DEFAULT_PORT: Final = 3180
 DEFAULT_SCAN_INTERVAL: Final = 5  # seconds
 
 # Config entry keys
-CONF_EMAIL: Final = "email"
-CONF_PASSWORD: Final = "password"
+CONF_TOKEN: Final = "token"
 CONF_BOARD_ID: Final = "board_id"
 CONF_HOST: Final = "host"
 CONF_PORT: Final = "port"

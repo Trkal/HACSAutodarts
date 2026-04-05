@@ -57,12 +57,13 @@ Player sensors show the player's name as an attribute and become unavailable whe
 
 1. Go to **Settings** → **Devices & Services** → **Add Integration**
 2. Search for **Autodarts**
-3. Enter your **email** and **password** for your Autodarts account
-4. *(Optional)* Enter the **local board IP** for throw detection
-5. If you have multiple boards, select which one to use
-6. Click **Submit**
+3. *(Optional)* Enter the **local board IP** for throw detection, then click **Submit**
+4. Click the link to **log in to your Autodarts account** in the browser
+5. After logging in, your browser will redirect — **copy the full URL** from the address bar
+6. Paste the URL into the config flow and click **Submit**
+7. If you have multiple boards, select which one to use
 
-The integration authenticates via OAuth2 to the Autodarts cloud, then creates all sensor entities automatically.
+The integration authenticates via OAuth2 (Authorization Code + PKCE) to the Autodarts cloud, then creates all sensor entities automatically. Tokens are refreshed automatically and persisted across restarts.
 
 ## Sensors
 

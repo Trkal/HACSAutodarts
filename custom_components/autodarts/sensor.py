@@ -54,7 +54,8 @@ def _local(data: dict[str, Any]) -> dict[str, Any]:
 def _get_board_status(data: dict[str, Any]) -> str:
     """Board connected / disconnected (from cloud board state)."""
     board = _board(data)
-    if board.get("connected"):
+    state = board.get("state") or {}
+    if state.get("connected"):
         return "connected"
     return "disconnected"
 
