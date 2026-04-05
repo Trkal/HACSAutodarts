@@ -1,0 +1,12 @@
+{
+  "domain": "autodarts",
+  "name": "Autodarts",
+  "codeowners": ["@Trkal"],
+  "config_flow": true,
+  "documentation": "https://github.com/Trkal/HACSAutodarts",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/Trkal/HACSAutodarts/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

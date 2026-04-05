@@ -1,0 +1,21 @@
+{
+  "title": "Autodarts",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Autodarts",
+        "description": "Enter the IP address and port of your Autodarts board.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Unable to connect to the Autodarts board. Please check the host and port."
+    },
+    "abort": {
+      "already_configured": "This Autodarts board is already configured."
+    }
+  }
+}
