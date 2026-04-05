@@ -6,8 +6,8 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import AutodartsApiClient
-from .const import CONF_HOST, CONF_PORT, PLATFORMS
+from .api import AutodartsCloudClient, AutodartsLocalClient
+from .const import CONF_BOARD_ID, CONF_EMAIL, CONF_HOST, CONF_PASSWORD, CONF_PORT, PLATFORMS
 from .coordinator import AutodartsDataUpdateCoordinator
 
 type AutodartsConfigEntry = ConfigEntry[AutodartsDataUpdateCoordinator]
@@ -19,13 +19,28 @@ async def async_setup_entry(
 ) -> bool:
     """Set up Autodarts from a config entry."""
     session = async_get_clientsession(hass)
-    api = AutodartsApiClient(
-        host=entry.data[CONF_HOST],
-        port=entry.data[CONF_PORT],
+
+    cloud = AutodartsCloudClient(
+        email=entry.data[CONF_EMAIL],
+        password=entry.data[CONF_PASSWORD],
         session=session,
     )
+    await cloud.authenticate()
 
-    coordinator = AutodartsDataUpdateCoordinator(hass, api)
+    local = None
+    if entry.data.get(CONF_HOST):
+        local = AutodartsLocalClient(
+            host=entry.data[CONF_HOST],
+            port=entry.data.get(CONF_PORT, 3180),
+            session=session,
+        )
+
+    coordinator = AutodartsDataUpdateCoordinator(
+        hass,
+        cloud=cloud,
+        board_id=entry.data[CONF_BOARD_ID],
+        local=local,
+    )
     await coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = coordinator

@@ -4,18 +4,43 @@
     "step": {
       "user": {
         "title": "Set up Autodarts",
-        "description": "Enter the IP address and port of your Autodarts board.",
+        "description": "Enter your Autodarts account credentials. Optionally provide the local board IP for faster throw detection.",
         "data": {
-          "host": "Host",
-          "port": "Port"
+          "email": "Email",
+          "password": "Password",
+          "host": "Local board IP (optional)",
+          "port": "Local board port"
+        }
+      },
+      "board": {
+        "title": "Select Board",
+        "description": "Choose the Autodarts board to monitor.",
+        "data": {
+          "board_id": "Board"
         }
       }
     },
     "error": {
-      "cannot_connect": "Unable to connect to the Autodarts board. Please check the host and port."
+      "invalid_auth": "Invalid email or password.",
+      "cannot_connect": "Unable to connect to the Autodarts cloud service.",
+      "no_boards": "No boards found for this account."
     },
     "abort": {
       "already_configured": "This Autodarts board is already configured."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "board_status": { "name": "Board Status" },
+      "board_event": { "name": "Board Event" },
+      "game_mode": { "name": "Game Mode" },
+      "match_state": { "name": "Match State" },
+      "current_player": { "name": "Current Player" },
+      "round": { "name": "Round" },
+      "last_throw": { "name": "Last Throw" },
+      "num_throws": { "name": "Throws in Turn" },
+      "visit_score": { "name": "Visit Score" },
+      "darts_thrown": { "name": "Total Turns" }
     }
   }
 }

@@ -4,27 +4,39 @@
 
 A [Home Assistant](https://www.home-assistant.io/) custom integration for [Autodarts](https://autodarts.io/) — the automatic dart scoring system.
 
-This integration polls your local Autodarts board to expose real-time match data, player statistics, and board status as Home Assistant sensor entities.
+This integration connects to the **Autodarts cloud API** (via OAuth2) to retrieve real-time match data, player scores, and statistics. Optionally, it also connects to your **local board** for faster throw detection.
 
 ## Features
 
-- **Board status** — connection state of your Autodarts board
-- **Match state** — active, waiting, or finished
-- **Game mode** — X01, Cricket, and all supported modes
-- **Current player** — who's throwing right now
-- **Per-player score** — remaining score for each player
-- **Per-player PPD** — points per dart average
-- **Per-player legs won** — legs/sets won count
-- **Last throw** — segment hit (e.g. T20, D16, Bull)
-- **Last visit score** — total points from the last 3 darts
-- **Darts thrown** — total darts thrown in the match
+### Board Sensors
+- **Board Status** — connected / disconnected
+- **Board Event** — last detection event (Throw, Takeout, Starting)
 
-Player sensors are created dynamically — new players are detected automatically when they join a match.
+### Match Sensors
+- **Game Mode** — X01, Cricket, Count Up, etc.
+- **Match State** — Active / Finished / No match
+- **Current Player** — who's throwing right now
+- **Round** — current round number
+- **Visit Score** — points scored in the current turn
+- **Total Turns** — total turns played in the match
+
+### Per-Player Sensors (up to 4 players)
+- **Player Score** — remaining points (X01)
+- **Player PPD** — points per dart average
+- **Player Legs Won** — legs won in the match
+- **Player Sets Won** — sets won in the match
+
+### Detection Sensors (requires local board IP)
+- **Last Throw** — segment hit (e.g. T20, D16, S5, Bull)
+- **Throws in Turn** — number of darts thrown in the current turn (0–3)
+
+Player sensors show the player's name as an attribute and become unavailable when no match is active or when a player slot is unused.
 
 ## Requirements
 
-- An Autodarts board running on your local network
-- The board's local API must be accessible (default port: **3180**)
+- An **Autodarts account** (email + password) at [autodarts.io](https://autodarts.io/)
+- At least one board registered to your account
+- *(Optional)* Local network access to the board for throw detection (default port: **3180**)
 
 ## Installation
 
@@ -45,33 +57,38 @@ Player sensors are created dynamically — new players are detected automaticall
 
 1. Go to **Settings** → **Devices & Services** → **Add Integration**
 2. Search for **Autodarts**
-3. Enter the **IP address** (or hostname) of your Autodarts board
-4. Enter the **port** (default: `3180`)
-5. Click **Submit**
+3. Enter your **email** and **password** for your Autodarts account
+4. *(Optional)* Enter the **local board IP** for throw detection
+5. If you have multiple boards, select which one to use
+6. Click **Submit**
 
-The integration will test the connection and create all sensor entities automatically.
+The integration authenticates via OAuth2 to the Autodarts cloud, then creates all sensor entities automatically.
 
 ## Sensors
 
-| Sensor | Description | Unit |
-|--------|-------------|------|
-| Board Status | Board connection state | — |
-| Game Mode | Active game type (X01, Cricket, etc.) | — |
-| Match State | Match status (active/waiting/finished) | — |
-| Current Player | Name of the player whose turn it is | — |
-| *Player* Score | Remaining score for each player | points |
-| *Player* PPD | Points per dart average | PPD |
-| *Player* Legs Won | Number of legs/sets won | — |
-| Last Throw | Last dart thrown (e.g. T20, D16) | — |
-| Last Visit Score | Total points from the last visit | points |
-| Darts Thrown | Total darts thrown in the match | darts |
+| Sensor | Source | Description | Unit |
+|--------|--------|-------------|------|
+| Board Status | Cloud | Board connection state | — |
+| Board Event | Local/Cloud | Last detection event | — |
+| Game Mode | Cloud | Active game type (X01, Cricket, etc.) | — |
+| Match State | Cloud | Match status (Active/Finished/No match) | — |
+| Current Player | Cloud | Player whose turn it is | — |
+| Round | Cloud | Current round number | — |
+| Last Throw | Local | Last dart segment (e.g. T20, D16) | — |
+| Throws in Turn | Local | Darts thrown this turn (0–3) | darts |
+| Visit Score | Cloud | Points scored in current turn | points |
+| Total Turns | Cloud | Total turns in the match | turns |
+| Player N Score | Cloud | Remaining score per player | points |
+| Player N PPD | Cloud | Points per dart average | PPD |
+| Player N Legs Won | Cloud | Legs won per player | — |
+| Player N Sets Won | Cloud | Sets won per player | — |
 
 ## Automations
 
 Use these sensors to trigger Home Assistant automations, for example:
 
-- Flash lights when a player checks out (match state changes to "finished")
-- Play a sound when a 180 is scored (last visit score = 180)
+- Flash lights when a player checks out (match state changes to "Finished")
+- Play a sound when a 180 is scored (visit score = 180)
 - Send a notification with match results
 - Display live scores on a dashboard
 

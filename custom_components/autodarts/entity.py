@@ -17,14 +17,14 @@ class AutodartsEntity(CoordinatorEntity[AutodartsDataUpdateCoordinator]):
     def __init__(
         self,
         coordinator: AutodartsDataUpdateCoordinator,
-        board_id: str,
     ) -> None:
         """Initialize the entity."""
         super().__init__(coordinator)
-        self._board_id = board_id
+        board = coordinator.data.get("board", {}) if coordinator.data else {}
+        board_name = board.get("name", "Autodarts Board")
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, board_id)},
-            name="Autodarts Board",
+            identifiers={(DOMAIN, coordinator.board_id)},
+            name=board_name,
             manufacturer="Autodarts",
             model="Dart Board",
         )
