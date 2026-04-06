@@ -41,7 +41,6 @@
       "board_event": { "name": "Board Event" },
       "game_mode": { "name": "Game Mode" },
       "match_state": { "name": "Match State" },
-      "current_player": { "name": "Current Player" },
       "round": { "name": "Round" },
       "last_throw": { "name": "Last Throw" },
       "num_throws": { "name": "Throws in Turn" },

@@ -4,7 +4,7 @@
 
 A [Home Assistant](https://www.home-assistant.io/) custom integration for [Autodarts](https://autodarts.io/) — the automatic dart scoring system.
 
-This integration connects to the **Autodarts cloud API** (via OAuth2) to retrieve real-time match data, player scores, and statistics. Optionally, it also connects to your **local board** for faster throw detection.
+This integration connects to the **Autodarts cloud API** (via OAuth2) to retrieve real-time match data and board status. Optionally, it also connects to your **local board** for faster throw detection.
 
 ## Features
 
@@ -15,22 +15,13 @@ This integration connects to the **Autodarts cloud API** (via OAuth2) to retriev
 ### Match Sensors
 - **Game Mode** — X01, Cricket, Count Up, etc.
 - **Match State** — Active / Finished / No match
-- **Current Player** — who's throwing right now
 - **Round** — current round number
 - **Visit Score** — points scored in the current turn
 - **Total Turns** — total turns played in the match
 
-### Per-Player Sensors (up to 4 players)
-- **Player Score** — remaining points (X01)
-- **Player PPD** — points per dart average
-- **Player Legs Won** — legs won in the match
-- **Player Sets Won** — sets won in the match
-
 ### Detection Sensors (requires local board IP)
 - **Last Throw** — segment hit (e.g. T20, D16, S5, Bull)
 - **Throws in Turn** — number of darts thrown in the current turn (0–3)
-
-Player sensors show the player's name as an attribute and become unavailable when no match is active or when a player slot is unused.
 
 ## Requirements
 
@@ -73,16 +64,11 @@ The integration authenticates via OAuth2 (Authorization Code + PKCE) to the Auto
 | Board Event | Local/Cloud | Last detection event | — |
 | Game Mode | Cloud | Active game type (X01, Cricket, etc.) | — |
 | Match State | Cloud | Match status (Active/Finished/No match) | — |
-| Current Player | Cloud | Player whose turn it is | — |
 | Round | Cloud | Current round number | — |
 | Last Throw | Local | Last dart segment (e.g. T20, D16) | — |
 | Throws in Turn | Local | Darts thrown this turn (0–3) | darts |
 | Visit Score | Cloud | Points scored in current turn | points |
 | Total Turns | Cloud | Total turns in the match | turns |
-| Player N Score | Cloud | Remaining score per player | points |
-| Player N PPD | Cloud | Points per dart average | PPD |
-| Player N Legs Won | Cloud | Legs won per player | — |
-| Player N Sets Won | Cloud | Sets won per player | — |
 
 ## Automations
 

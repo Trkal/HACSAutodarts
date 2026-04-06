@@ -22,7 +22,6 @@ SENSOR_BOARD_EVENT: Final = "board_event"
 # Sensor keys — match
 SENSOR_GAME_MODE: Final = "game_mode"
 SENSOR_MATCH_STATE: Final = "match_state"
-SENSOR_CURRENT_PLAYER: Final = "current_player"
 SENSOR_ROUND: Final = "round"
 
 # Sensor keys — detection

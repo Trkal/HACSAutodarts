@@ -12,14 +12,13 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     DOMAIN,
     SENSOR_BOARD_EVENT,
     SENSOR_BOARD_STATUS,
-    SENSOR_CURRENT_PLAYER,
     SENSOR_DARTS_THROWN,
     SENSOR_GAME_MODE,
     SENSOR_LAST_THROW,
@@ -86,18 +85,6 @@ def _get_match_state(data: dict[str, Any]) -> str | None:
     if match.get("finished"):
         return "Finished"
     return "Active"
-
-
-def _get_current_player(data: dict[str, Any]) -> str | None:
-    """Name of the player whose turn it is."""
-    match = _match(data)
-    if not match:
-        return None
-    player_idx = match.get("player", 0)
-    players = match.get("players", [])
-    if 0 <= player_idx < len(players):
-        return players[player_idx].get("name", f"Player {player_idx + 1}")
-    return None
 
 
 def _get_round(data: dict[str, Any]) -> int | None:
@@ -184,12 +171,6 @@ STATIC_SENSORS: tuple[AutodartsSensorEntityDescription, ...] = (
         value_fn=_get_match_state,
     ),
     AutodartsSensorEntityDescription(
-        key=SENSOR_CURRENT_PLAYER,
-        translation_key=SENSOR_CURRENT_PLAYER,
-        icon="mdi:account",
-        value_fn=_get_current_player,
-    ),
-    AutodartsSensorEntityDescription(
         key=SENSOR_ROUND,
         translation_key=SENSOR_ROUND,
         icon="mdi:rotate-right",
@@ -226,8 +207,6 @@ STATIC_SENSORS: tuple[AutodartsSensorEntityDescription, ...] = (
     ),
 )
 
-MAX_PLAYERS = 4
-
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -237,18 +216,10 @@ async def async_setup_entry(
     """Set up Autodarts sensors from a config entry."""
     coordinator: AutodartsDataUpdateCoordinator = entry.runtime_data
 
-    entities: list[SensorEntity] = []
-
-    # Static sensors
-    for description in STATIC_SENSORS:
-        entities.append(AutodartsSensor(coordinator, description))
-
-    # Per-player sensors (pre-create slots for up to MAX_PLAYERS)
-    for idx in range(MAX_PLAYERS):
-        entities.append(AutodartsPlayerScoreSensor(coordinator, idx))
-        entities.append(AutodartsPlayerPPDSensor(coordinator, idx))
-        entities.append(AutodartsPlayerLegsSensor(coordinator, idx))
-        entities.append(AutodartsPlayerSetsSensor(coordinator, idx))
+    entities: list[SensorEntity] = [
+        AutodartsSensor(coordinator, description)
+        for description in STATIC_SENSORS
+    ]
 
     async_add_entities(entities)
 
@@ -277,161 +248,3 @@ class AutodartsSensor(AutodartsEntity, SensorEntity):
     def native_value(self) -> Any:
         """Return the sensor value."""
         return self.entity_description.value_fn(self.coordinator.data or {})
-
-
-class AutodartsPlayerSensorBase(AutodartsEntity, SensorEntity):
-    """Base class for per-player sensors."""
-
-    def __init__(
-        self,
-        coordinator: AutodartsDataUpdateCoordinator,
-        player_index: int,
-        key_suffix: str,
-        label: str,
-    ) -> None:
-        """Initialize the player sensor."""
-        super().__init__(coordinator)
-        self._player_index = player_index
-        self._key_suffix = key_suffix
-        self._label = label
-        self._attr_unique_id = f"{coordinator.board_id}_player_{player_index}_{key_suffix}"
-
-    @property
-    def _match_data(self) -> dict[str, Any] | None:
-        data = self.coordinator.data or {}
-        return _match(data)
-
-    @property
-    def _player_name(self) -> str:
-        """Get the actual player name or fallback."""
-        player = self._player_data
-        if player:
-            return player.get("name", f"Player {self._player_index + 1}")
-        return f"Player {self._player_index + 1}"
-
-    @property
-    def name(self) -> str:
-        """Dynamic name using actual player name."""
-        return f"{self._player_name} {self._label}"
-
-    @property
-    def _player_data(self) -> dict[str, Any] | None:
-        match = self._match_data
-        if not match:
-            return None
-        players = match.get("players", [])
-        if self._player_index < len(players):
-            return players[self._player_index]
-        return None
-
-    @property
-    def _score_data(self) -> dict[str, Any] | None:
-        match = self._match_data
-        if not match:
-            return None
-        scores = match.get("scores", [])
-        if self._player_index < len(scores):
-            return scores[self._player_index]
-        return None
-
-    @property
-    def _stats_data(self) -> dict[str, Any] | None:
-        match = self._match_data
-        if not match:
-            return None
-        stats = match.get("stats", [])
-        if self._player_index < len(stats):
-            return stats[self._player_index]
-        return None
-
-    @property
-    def available(self) -> bool:
-        """Only available when this player slot is active in a match."""
-        return self._player_data is not None
-
-
-class AutodartsPlayerScoreSensor(AutodartsPlayerSensorBase):
-    """Sensor for a player's current score / remaining points."""
-
-    _attr_icon = "mdi:counter"
-    _attr_native_unit_of_measurement = "points"
-    _attr_state_class = SensorStateClass.MEASUREMENT
-
-    def __init__(self, coordinator: AutodartsDataUpdateCoordinator, player_index: int) -> None:
-        super().__init__(coordinator, player_index, "score", "Score")
-
-    @property
-    def native_value(self) -> int | None:
-        match = self._match_data
-        if not match:
-            return None
-        game_scores = match.get("gameScores", [])
-        if self._player_index < len(game_scores):
-            return game_scores[self._player_index]
-        return None
-
-
-class AutodartsPlayerPPDSensor(AutodartsPlayerSensorBase):
-    """Sensor for a player's Points Per Dart average."""
-
-    _attr_icon = "mdi:chart-line"
-    _attr_native_unit_of_measurement = "PPD"
-    _attr_state_class = SensorStateClass.MEASUREMENT
-
-    def __init__(self, coordinator: AutodartsDataUpdateCoordinator, player_index: int) -> None:
-        super().__init__(coordinator, player_index, "ppd", "Average")
-
-    @property
-    def native_value(self) -> float | None:
-        stats = self._stats_data
-        if not stats:
-            return None
-        avg = stats.get("average")
-        if avg is not None:
-            return round(float(avg), 2)
-        return None
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        stats = self._stats_data
-        if not stats:
-            return None
-        attrs: dict[str, Any] = {}
-        leg = stats.get("legStats") or {}
-        if leg.get("average") is not None:
-            attrs["leg_average"] = round(float(leg["average"]), 2)
-        if leg.get("dartsThrown") is not None:
-            attrs["leg_darts_thrown"] = leg["dartsThrown"]
-        return attrs or None
-
-
-class AutodartsPlayerLegsSensor(AutodartsPlayerSensorBase):
-    """Sensor for a player's legs won."""
-
-    _attr_icon = "mdi:trophy"
-
-    def __init__(self, coordinator: AutodartsDataUpdateCoordinator, player_index: int) -> None:
-        super().__init__(coordinator, player_index, "legs", "Legs")
-
-    @property
-    def native_value(self) -> int | None:
-        score = self._score_data
-        if score is None:
-            return None
-        return score.get("legs")
-
-
-class AutodartsPlayerSetsSensor(AutodartsPlayerSensorBase):
-    """Sensor for a player's sets won."""
-
-    _attr_icon = "mdi:trophy-variant"
-
-    def __init__(self, coordinator: AutodartsDataUpdateCoordinator, player_index: int) -> None:
-        super().__init__(coordinator, player_index, "sets", "Sets")
-
-    @property
-    def native_value(self) -> int | None:
-        score = self._score_data
-        if score is None:
-            return None
-        return score.get("sets")

@@ -234,12 +234,4 @@ class AutodartsCloudClient:
         """Get live match game state (scores, turns, stats, etc.)."""
         return await self._get(f"/gs/v0/matches/{match_id}/state")
 
-    # -- users / stats -------------------------------------------------------
 
-    async def get_user(self, user_id: str) -> dict[str, Any]:
-        """Get user profile."""
-        return await self._get(f"/as/v0/users/{user_id}")
-
-    async def get_user_stats(self, user_id: str, variant: str = "x01", limit: int = 10) -> dict[str, Any]:
-        """Get user statistics for a game variant."""
-        return await self._get(f"/as/v0/users/{user_id}/stats/{variant}?limit={limit}")
